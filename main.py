@@ -4,134 +4,158 @@ SC4023 Group Project — Main Entry Point
 Usage:
     python main.py <csv_path> <matriculation_number>
 
-Example:
+Examples:
     python main.py ResalePricesSingapore.csv U2323465X
+    python main.py ResalePricesSingapore.csv A6626226B
 
-This script:
+What this script does:
     1. Parses the matriculation number to derive query parameters
-    2. Loads the CSV into column-oriented storage
-    3. Runs the query across all valid (x, y) pairs
-    4. Writes ScanResult_<MatricNum>.csv to the same directory as this script
+       (target year, start month, matched towns)
+    2. Loads ResalePricesSingapore.csv into column-oriented storage
+    3. Runs the query across all (x, y) combinations
+    4. Writes ScanResult_<MatricNum>.csv to the working directory
 
-Query Logic (column-oriented)
-------------------------------
-For each (x, y) pair where x ∈ [1,8] and y ∈ [80,150]:
-    - Filter rows: year == target_year
-                   month_num in [start_month, start_month + x - 1]
-                   town in matched_towns
-                   floor_area >= y
-    - Find row with minimum (resale_price / floor_area)
-    - If that minimum price/sqm <= 4725 → (x, y) is VALID → write to output
+Query Definition
+----------------
+For each (x, y) pair where x in [1, 8] and y in [80, 150]:
+    Filter rows where:
+        year        == target_year
+        month_num   in [start_month, start_month + x - 1]
+        town        in matched_towns
+        floor_area  >= y
+    Find the row with minimum (resale_price / floor_area).
+    If that minimum price/sqm <= 4725  ->  (x, y) is VALID.
+    If no rows match at all            ->  output "No result".
 
-Efficiency: year + town filters are applied ONCE upfront as a candidate index.
-The inner (x, y) loop only scans that reduced candidate set (~1-5% of all rows).
+Matriculation Number Parsing Rules (from assignment spec)
+----------------------------------------------------------
+    Last digit        -> target year  (5-9 -> 2015-2019, 0-4 -> 2020-2024)
+    Second last digit -> start month  (0 = October, 1-9 = Jan-Sep)
+    All unique digits -> matched towns (Table 1 from assignment)
 """
 
 import sys
 import os
 import csv
 
-# ── Import column store (must be in same directory) ──────────────────────────
+# Import shared column store
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from column_store_ishita import load_csv
+from column_store import load_csv
 
 
 # ---------------------------------------------------------------------------
-# Table 1 from assignment: digit → town
+# Constants from assignment spec
 # ---------------------------------------------------------------------------
+
+# Table 1: digit -> town name
 DIGIT_TO_TOWN = {
-    '0': 'BEDOK',
-    '1': 'BUKIT PANJANG',
-    '2': 'CLEMENTI',
-    '3': 'CHOA CHU KANG',
-    '4': 'HOUGANG',
-    '5': 'JURONG WEST',
-    '6': 'PASIR RIS',
-    '7': 'TAMPINES',
-    '8': 'WOODLANDS',
-    '9': 'YISHUN',
+    "0": "BEDOK",
+    "1": "BUKIT PANJANG",
+    "2": "CLEMENTI",
+    "3": "CHOA CHU KANG",
+    "4": "HOUGANG",
+    "5": "JURONG WEST",
+    "6": "PASIR RIS",
+    "7": "TAMPINES",
+    "8": "WOODLANDS",
+    "9": "YISHUN",
 }
 
-# Month digit 0 represents October (per assignment spec)
-MONTH_DIGIT_MAP = {
-    '0': 10,  # October
-    '1': 1, '2': 2, '3': 3, '4': 4,
-    '5': 5,  '6': 6, '7': 7, '8': 8,
-    '9': 9,
+# Second-last digit -> start month (0 represents October per spec)
+DIGIT_TO_MONTH = {
+    "0": 10,
+    "1": 1, "2": 2, "3": 3, "4": 4,
+    "5": 5, "6": 6, "7": 7, "8": 8,
+    "9": 9,
 }
 
-MAX_PRICE_PSM = 4725
+MAX_PRICE_PSM = 4725    # validity threshold
+X_MIN, X_MAX  = 1, 8    # x range (months window)
+Y_MIN, Y_MAX  = 80, 150 # y range (minimum floor area in sqm)
 
 
 # ---------------------------------------------------------------------------
-# Parse matriculation number → query parameters
+# Step 1: Parse matriculation number
 # ---------------------------------------------------------------------------
 
 def parse_matric(matric: str) -> dict:
     """
-    Extract query parameters from a matriculation number.
+    Derive query parameters from a matriculation number.
 
-    Rules (from assignment spec):
-      - Last digit       → target year  (digit d → year 201d or 202d)
-                           Note: 2025 data not used as target year
-      - Second last digit → start month  (0 = October, 1–9 = Jan–Sep)
-      - ALL unique digits  → matched towns (via Table 1)
+    Parameters
+    ----------
+    matric : str  e.g. "U2323465X"
 
-    Returns a dict with keys: year, start_month, towns
+    Returns
+    -------
+    dict with keys:
+        year        : int   target year
+        start_month : int   starting month number (1-12)
+        towns       : set   set of town name strings
     """
-    # Strip leading letter(s) and trailing letter(s) — keep only digits
-    digits_only = ''.join(c for c in matric if c.isdigit())
+    digits = "".join(c for c in matric if c.isdigit())
 
-    if len(digits_only) < 2:
-        raise ValueError(f"Cannot parse matric number: '{matric}'")
+    if len(digits) < 2:
+        raise ValueError(
+            f"Matriculation number '{matric}' must contain at least 2 digits."
+        )
 
-    # ── Target year from last digit ───────────────────────────────────────
-    last_digit = digits_only[-1]
-    year_suffix = int(last_digit)
-    # Per spec example: digit 5 → 2015, digit 7 → 2017
-    # All digits map to 201X (dataset is 2015–2024)
-    target_year = 2010 + year_suffix if year_suffix >= 5 else 2020 + year_suffix
+    # Target year from last digit (spec: digit 5 -> 2015, digit 7 -> 2017)
+    last = int(digits[-1])
+    target_year = 2010 + last if last >= 5 else 2020 + last
 
-    # ── Start month from second last digit ───────────────────────────────
-    second_last = digits_only[-2]
-    start_month = MONTH_DIGIT_MAP[second_last]
+    # Start month from second-last digit
+    start_month = DIGIT_TO_MONTH[digits[-2]]
 
-    # ── Towns from ALL unique digits ──────────────────────────────────────
-    unique_digits = set(digits_only)
-    towns = {DIGIT_TO_TOWN[d] for d in unique_digits if d in DIGIT_TO_TOWN}
+    # Matched towns from ALL unique digits in the matric number
+    towns = {DIGIT_TO_TOWN[d] for d in set(digits) if d in DIGIT_TO_TOWN}
 
-    return {
-        'year':        target_year,
-        'start_month': start_month,
-        'towns':       towns,
-    }
+    return {"year": target_year, "start_month": start_month, "towns": towns}
 
 
 # ---------------------------------------------------------------------------
-# Core query — column-oriented scan
+# Step 2: Query engine (column-oriented scan)
 # ---------------------------------------------------------------------------
 
 def run_query(store, params: dict) -> list:
     """
-    Scan the column store for all valid (x, y) pairs.
+    Scan the column store for all (x, y) combinations and return results.
 
-    Column-oriented efficiency strategy:
-      Step 1 — Build candidate index: filter by year + town ONCE.
-               This reduces 259k rows to a small working set (~1–5%).
-      Step 2 — For each x: filter candidate index by month window.
-               Reused across all y values for that x.
-      Step 3 — For each y: filter by floor_area, find min price/sqm.
+    Column-Oriented Efficiency Strategy
+    ------------------------------------
+    Rather than scanning all 259,237 rows for each of the 568 (x,y) pairs,
+    we use a 3-step pre-filtering approach that reuses intermediate results:
 
-    Total scans = O(n) for Step 1 + O(candidates × x_values) for Step 2-3
-    instead of O(n × x × y) if we rescanned everything each time.
+    Step 1 - Build candidate index (done ONCE):
+              Filter all rows by year AND town simultaneously.
+              For Ishita's matric: 259,237 rows -> 4,227 candidates (~1.6%).
+              This index list is reused for every (x, y) combination.
+
+    Step 2 - Month window filter (done ONCE per x value, 8 times total):
+              From the candidates, keep only rows whose month falls within
+              [start_month, start_month + x - 1].
+              This month-filtered index is reused for all 71 y values.
+
+    Step 3 - Floor area filter + min PSM (done once per (x, y) pair):
+              Drop rows with floor_area < y, then find minimum price/sqm.
+              Apply validity threshold. Write "No result" if no data found
+              or if minimum PSM exceeds 4725.
+
+    Parameters
+    ----------
+    store  : ColumnStore
+    params : dict  from parse_matric()
+
+    Returns
+    -------
+    list of result dicts, one per (x, y) pair, sorted x then y
     """
-    target_year  = params['year']
-    start_month  = params['start_month']
-    towns        = params['towns']
+    target_year = params["year"]
+    start_month = params["start_month"]
+    towns       = params["towns"]
+    n           = len(store)
 
-    n = len(store)
-
-    # ── Step 1: Build candidate index (year + town filter) ───────────────
+    # -- Step 1: Candidate index (year + town, computed once) --------------
     candidate_idx = [
         i for i in range(n)
         if store.year_col[i] == target_year
@@ -140,81 +164,113 @@ def run_query(store, params: dict) -> list:
 
     results = []
 
-    # ── Step 2 & 3: Loop (x, y) ──────────────────────────────────────────
-    for x in range(1, 9):          # x: 1 to 8
-        end_month = min(start_month + x - 1, 12)
+    # -- Steps 2 & 3: Loop over all (x, y) pairs --------------------------
+    for x in range(X_MIN, X_MAX + 1):
+
+        # Month window: [start_month, start_month + x - 1], capped at Dec
+        # Queries do not wrap into the following year
+        end_month    = min(start_month + x - 1, 12)
         valid_months = set(range(start_month, end_month + 1))
 
-        # Filter candidate_idx by month window (reused for all y)
+        # Step 2: filter by month window (reused for all y at this x)
         month_idx = [
             i for i in candidate_idx
             if store.month_num_col[i] in valid_months
         ]
 
-        for y in range(80, 151):   # y: 80 to 150
-            # Filter by floor area
+        for y in range(Y_MIN, Y_MAX + 1):
+
+            # Step 3a: filter by minimum floor area
             matched = [
                 i for i in month_idx
                 if store.floor_area_col[i] >= y
             ]
 
+            # No data at all for this (x, y) combination
             if not matched:
+                results.append(_no_result_row(x, y))
                 continue
 
-            # Find row with minimum price per sqm
+            # Step 3b: find row with minimum price per square metre
             best_i   = None
-            best_psm = float('inf')
+            best_psm = float("inf")
             for i in matched:
                 psm = store.resale_price_col[i] / store.floor_area_col[i]
                 if psm < best_psm:
                     best_psm = psm
                     best_i   = i
 
-            # Validity check
+            # PSM exceeds validity threshold
             if best_psm > MAX_PRICE_PSM:
+                results.append(_no_result_row(x, y))
                 continue
 
+            # Valid pair - record the best matching record
             i = best_i
             results.append({
-                '(x,y)':                 f'({x}, {y})',
-                'Year':                  store.year_col[i],
-                'Month':                 f'{store.month_num_col[i]:02d}',
-                'Town':                  store.town_col[i],
-                'Block':                 store.block_col[i],
-                'Floor_Area':            int(store.floor_area_col[i]),
-                'Flat_Model':            store.flat_model_col[i],
-                'Lease_Commence_Date':   store.lease_commence_date_col[i],
-                'Price_Per_Square_Meter': round(best_psm),
+                "(x, y)":               f"({x}, {y})",
+                "Year":                 store.year_col[i],
+                "Month":                f"{store.month_num_col[i]:02d}",
+                "Town":                 store.town_col[i],
+                "Block":                store.block_col[i],
+                "Floor_Area":           int(store.floor_area_col[i]),
+                "Flat_Model":           store.flat_model_col[i],
+                "Lease_Commence_Date":  store.lease_commence_date_col[i],
+                "Price_Per_Square_Meter": round(best_psm),
             })
 
     return results
 
 
+def _no_result_row(x: int, y: int) -> dict:
+    """Return a 'No result' row for the given (x, y) pair."""
+    return {
+        "(x, y)":               f"({x}, {y})",
+        "Year":                 "No result",
+        "Month":                "No result",
+        "Town":                 "No result",
+        "Block":                "No result",
+        "Floor_Area":           "No result",
+        "Flat_Model":           "No result",
+        "Lease_Commence_Date":  "No result",
+        "Price_Per_Square_Meter": "No result",
+    }
+
+
 # ---------------------------------------------------------------------------
-# Write output CSV
+# Step 3: Write output CSV
 # ---------------------------------------------------------------------------
 
-def write_output(results: list, output_path: str, matric: str):
+def write_output(results: list, output_path: str):
     """
-    Write results to ScanResult_<MatricNum>.csv.
-    If no results exist for a pair, the spec says output 'No result'
-    — handled by absence of that pair in results list (not written).
-    Pairs are already sorted by (x ascending, y ascending) from the loop.
+    Write query results to ScanResult_<MatricNum>.csv.
+
+    Output format matches assignment spec exactly:
+        (x, y),Year,Month,Town,Block,Floor_Area,Flat_Model,
+        Lease_Commence_Date,Price_Per_Square_Meter
+
+    Pairs with no qualifying data are written as "No result" in all fields.
+    Rows are sorted x ascending then y ascending (guaranteed by loop order).
     """
     fieldnames = [
-        '(x,y)', 'Year', 'Month', 'Town', 'Block',
-        'Floor_Area', 'Flat_Model', 'Lease_Commence_Date',
-        'Price_Per_Square_Meter'
+        "(x, y)", "Year", "Month", "Town", "Block",
+        "Floor_Area", "Flat_Model", "Lease_Commence_Date",
+        "Price_Per_Square_Meter",
     ]
 
-    with open(output_path, 'w', newline='', encoding='utf-8') as fh:
+    with open(output_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames, quoting=csv.QUOTE_MINIMAL)
         writer.writeheader()
         for row in results:
             writer.writerow(row)
 
-    print(f"\n✓ Output written to: {output_path}")
-    print(f"  Total valid (x, y) pairs: {len(results)}")
+    valid_count  = sum(1 for r in results if r["Year"] != "No result")
+    no_res_count = sum(1 for r in results if r["Year"] == "No result")
+
+    print(f"  Output file  : {output_path}")
+    print(f"  Valid pairs  : {valid_count}")
+    print(f"  No result    : {no_res_count}")
+    print(f"  Total rows   : {len(results)}")
 
 
 # ---------------------------------------------------------------------------
@@ -222,62 +278,71 @@ def write_output(results: list, output_path: str, matric: str):
 # ---------------------------------------------------------------------------
 
 def main():
+    # Argument validation
     if len(sys.argv) != 3:
-        print("Usage: python main.py <csv_path> <matriculation_number>")
+        print("Usage  : python main.py <csv_path> <matriculation_number>")
         print("Example: python main.py ResalePricesSingapore.csv U2323465X")
         sys.exit(1)
 
     csv_path = sys.argv[1]
-    matric   = sys.argv[2].upper().strip()
+    matric   = sys.argv[2].strip().upper()
 
     if not os.path.exists(csv_path):
-        print(f"[ERROR] File not found: {csv_path}")
+        print(f"[ERROR] File not found: '{csv_path}'")
         sys.exit(1)
 
-    # ── Parse matric ──────────────────────────────────────────────────────
+    # Parse matric number
     try:
         params = parse_matric(matric)
     except ValueError as e:
         print(f"[ERROR] {e}")
         sys.exit(1)
 
-    print("=" * 60)
-    print(f"  SC4023 HDB Resale Query")
+    # Print derived parameters
+    print("=" * 62)
+    print("  SC4023 — HDB Resale Minimum Price per Square Metre")
+    print("=" * 62)
     print(f"  Matriculation : {matric}")
     print(f"  Target Year   : {params['year']}")
     print(f"  Start Month   : {params['start_month']:02d}")
     print(f"  Towns         : {sorted(params['towns'])}")
-    print(f"  x range       : 1 to 8")
-    print(f"  y range       : 80 to 150 sqm")
+    print(f"  x range       : {X_MIN} to {X_MAX}  (months window)")
+    print(f"  y range       : {Y_MIN} to {Y_MAX}  (min floor area sqm)")
     print(f"  Max PSM       : {MAX_PRICE_PSM}")
-    print("=" * 60)
+    print("=" * 62)
 
-    # ── Load CSV ──────────────────────────────────────────────────────────
-    print("\nLoading data...")
+    # Step 1: Load CSV
+    print("\nStep 1 — Loading data into column store...")
     store = load_csv(csv_path)
-    print(f"  Rows loaded: {len(store):,}")
+    print(f"  {store}")
 
-    # ── Run query ─────────────────────────────────────────────────────────
-    print("\nRunning query...")
+    # Step 2: Run query
+    print("\nStep 2 — Running query...")
     results = run_query(store, params)
 
-    # ── Write output ──────────────────────────────────────────────────────
-    output_dir  = os.path.dirname(os.path.abspath(__file__))
-    output_path = os.path.join(output_dir, f'ScanResult_{matric}.csv')
-    write_output(results, output_path, matric)
+    # Step 3: Write output
+    print("\nStep 3 — Writing output...")
+    output_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        f"ScanResult_{matric}.csv"
+    )
+    write_output(results, output_path)
 
-    # ── Preview first 5 rows ──────────────────────────────────────────────
-    if results:
-        print("\nPreview (first 5 rows):")
-        print(f"  {'(x,y)':<10} {'Year'} {'Mo'} {'Town':<16} "
+    # Preview first 5 valid rows
+    valid_rows = [r for r in results if r["Year"] != "No result"]
+    if valid_rows:
+        print("\nPreview (first 5 valid results):")
+        print(f"  {'(x, y)':<10} {'Year'} {'Mo'} {'Town':<16} "
               f"{'Block':<8} {'Area':>4} {'Model':<18} {'LCD':>4} {'PSM':>6}")
-        print("  " + "-" * 75)
-        for r in results[:5]:
-            print(f"  {r['(x,y)']:<10} {r['Year']} {r['Month']} "
+        print("  " + "-" * 76)
+        for r in valid_rows[:5]:
+            print(f"  {r['(x, y)']:<10} {r['Year']} {r['Month']} "
                   f"{r['Town']:<16} {r['Block']:<8} {r['Floor_Area']:>4} "
                   f"{r['Flat_Model']:<18} {r['Lease_Commence_Date']:>4} "
                   f"{r['Price_Per_Square_Meter']:>6}")
 
+    print("\nDone.")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
