@@ -92,11 +92,3 @@ The `analysis.py` file runs through these in detail with actual numbers from the
 | Last digit → target year (5–9 → 2015–2019, 0–4 → 2020–2024) | digit `5` → year `2015` |
 | Second last digit → start month (0 = October) | digit `6` → month `06` |
 | All unique digits → matched towns (from spec Table 1) | digits `2,3,4,5,6` → 5 towns |
-
-## Group Member Column Assignments
-
-| Member | Columns |
-|--------|---------|
-| Chavi | Month, Town, Block (+ derived Year, Month_Num) |
-| Justin | Street_Name, Flat_Type, Flat_Model |
-| Ishita | Storey_Range, Floor_Area, Lease_Commence_Date, Resale_Price |
