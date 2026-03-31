@@ -1,4 +1,5 @@
 import csv
+from typing import Dict, List
 
 MONTH_ABBR = {
     "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4,
@@ -18,17 +19,31 @@ class ColumnStore:
         # Chavi's columns
         self.month_col = []          # raw string, e.g. '2015-01'
         self.town_col = []
+        self.town_codes: List[int] = []
+        self.town_dict: Dict[str, int] = {}
+        self.town_rev: List[str] = []
+        self.town_rle: List[tuple[int, int]] = []  # (code, run_len)
         self.block_col = []
         self.year_col = []           # parsed from month_col at load time
         self.month_num_col = []      # parsed from month_col at load time
+        self.month_rle: List[tuple[int, int]] = []  # (month_num, run_len)
 
         # Justin's columns
         self.street_name_col = []
         self.flat_type_col = []
+        self.flat_type_codes: List[int] = []
+        self.flat_type_dict: Dict[str, int] = {}
+        self.flat_type_rev: List[str] = []
         self.flat_model_col = []
+        self.flat_model_codes: List[int] = []
+        self.flat_model_dict: Dict[str, int] = {}
+        self.flat_model_rev: List[str] = []
 
         # Ishita's columns
         self.storey_range_col = []
+        self.storey_range_codes: List[int] = []
+        self.storey_range_dict: Dict[str, int] = {}
+        self.storey_range_rev: List[str] = []
         self.floor_area_col = []
         self.lease_commence_date_col = []
         self.resale_price_col = []
@@ -39,7 +54,45 @@ class ColumnStore:
         return self._n_rows
 
     def __repr__(self):
-        return f"ColumnStore({self._n_rows:,} rows, 12 columns)"
+        return f"ColumnStore({self._n_rows:,} rows, 12 columns; encoded: town/flat_type/flat_model/storey_range)"
+
+    @staticmethod
+    def _encode(value: str, mapping: Dict[str, int], reverse: List[str]) -> int:
+        code = mapping.get(value)
+        if code is None:
+            code = len(reverse)
+            mapping[value] = code
+            reverse.append(value)
+        return code
+
+    def decode_town(self, code: int) -> str:
+        return self.town_rev[code]
+
+    def decode_flat_type(self, code: int) -> str:
+        return self.flat_type_rev[code]
+
+    def decode_flat_model(self, code: int) -> str:
+        return self.flat_model_rev[code]
+
+    def decode_storey_range(self, code: int) -> str:
+        return self.storey_range_rev[code]
+
+    @staticmethod
+    def _build_rle(seq: List[int]) -> List[tuple[int, int]]:
+        if not seq:
+            return []
+        runs: List[tuple[int, int]] = []
+        cur = seq[0]
+        count = 1
+        for v in seq[1:]:
+            if v == cur:
+                count += 1
+            else:
+                runs.append((cur, count))
+                cur = v
+                count = 1
+        runs.append((cur, count))
+        return runs
 
 
 def _parse_month(raw):
@@ -74,21 +127,38 @@ def load_csv(filepath):
 
             # Chavi
             store.month_col.append(row['month'].strip())
-            store.town_col.append(row['town'].strip().upper())
+            town_str = row['town'].strip().upper()
+            store.town_col.append(town_str)
+            town_code = store._encode(town_str, store.town_dict, store.town_rev)
+            store.town_codes.append(town_code)
             store.block_col.append(row['block'].strip())
             store.year_col.append(year)
             store.month_num_col.append(month_num)
             # Justin
             store.street_name_col.append(row['street_name'].strip())
-            store.flat_type_col.append(row['flat_type'].strip())
-            store.flat_model_col.append(row['flat_model'].strip())
+            ft_str = row['flat_type'].strip()
+            fm_str = row['flat_model'].strip()
+            store.flat_type_col.append(ft_str)
+            store.flat_model_col.append(fm_str)
+            ft_code = store._encode(ft_str, store.flat_type_dict, store.flat_type_rev)
+            fm_code = store._encode(fm_str, store.flat_model_dict, store.flat_model_rev)
+            store.flat_type_codes.append(ft_code)
+            store.flat_model_codes.append(fm_code)
             # Ishita
-            store.storey_range_col.append(row['storey_range'].strip())
+            sr_str = row['storey_range'].strip()
+            store.storey_range_col.append(sr_str)
+            sr_code = store._encode(sr_str, store.storey_range_dict, store.storey_range_rev)
+            store.storey_range_codes.append(sr_code)
             store.floor_area_col.append(floor_area)
             store.lease_commence_date_col.append(lcd)
             store.resale_price_col.append(price)
             store._n_rows += 1
 
-    msg = f"Loaded {store._n_rows:,} rows"
-    print(msg if not skipped else msg + f", skipped {skipped} malformed rows")
+        msg = f"Loaded {store._n_rows:,} rows"
+        print(msg if not skipped else msg + f", skipped {skipped} malformed rows")
+
+        # Build RLE for encoded town codes and month numbers once after loading
+        store.town_rle = store._build_rle(store.town_codes)
+        store.month_rle = store._build_rle(store.month_num_col)
+        print(f"[INFO] RLE sizes — town runs: {len(store.town_rle)}, month runs: {len(store.month_rle)}")
     return store

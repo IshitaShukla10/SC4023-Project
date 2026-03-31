@@ -75,10 +75,12 @@ def run_query(store, year, start_month, towns):
     """
     n = len(store)
 
+    town_codes = {store.town_dict[t] for t in towns if t in store.town_dict}
+
     # Stage 1: filter by year and town once — reused across all (x, y)
     base = [
         i for i in range(n)
-        if store.year_col[i] == year and store.town_col[i] in towns
+        if store.year_col[i] == year and store.town_codes[i] in town_codes
     ]
 
     results = []
@@ -111,10 +113,10 @@ def run_query(store, year, start_month, towns):
                 "(x, y)":                 f"({x}, {y})",
                 "Year":                   store.year_col[i],
                 "Month":                  f"{store.month_num_col[i]:02d}",
-                "Town":                   store.town_col[i],
+                "Town":                   store.decode_town(store.town_codes[i]),
                 "Block":                  store.block_col[i],
                 "Floor_Area":             int(store.floor_area_col[i]),
-                "Flat_Model":             store.flat_model_col[i],
+                "Flat_Model":             store.decode_flat_model(store.flat_model_codes[i]),
                 "Lease_Commence_Date":    store.lease_commence_date_col[i],
                 "Price_Per_Square_Meter": round(best_psm),
             })
