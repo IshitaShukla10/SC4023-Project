@@ -108,11 +108,11 @@ def show_zone_maps(store):
     n    = len(store)
     nblk = n_blocks(n)
 
-    zm_year  = build_zone_map(store.year_col)
-    zm_month = build_zone_map(store.month_num_col)
-    zm_area  = build_zone_map(store.floor_area_col)
-    zm_price = build_zone_map(store.resale_price_col)
-    zm_lcd   = build_zone_map(store.lease_commence_date_col)
+    zm_year  = store.year_zm
+    zm_month = store.month_num_zm
+    zm_area  = store.floor_area_zm
+    zm_price = store.resale_price_zm
+    zm_lcd   = store.lease_commence_date_zm
 
     end_month = min(START_MONTH + DEMO_X - 1, 12)
     tests = [

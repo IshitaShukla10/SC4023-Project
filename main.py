@@ -10,31 +10,7 @@ import os
 import csv
 
 from column_store import load_csv
-
-# ── Assignment constants ────────────────────────────────────────────────────
-
-DIGIT_TO_YEAR = {
-    "0": 2020, "1": 2021, "2": 2022, "3": 2023, "4": 2024,
-    "5": 2015, "6": 2016, "7": 2017, "8": 2018, "9": 2019,
-}
-
-# digit 0 maps to October per the spec
-DIGIT_TO_MONTH = {
-    "0": 10, "1": 1, "2": 2, "3": 3, "4": 4,
-    "5": 5,  "6": 6, "7": 7, "8": 8, "9": 9,
-}
-
-DIGIT_TO_TOWN = {
-    "0": "BEDOK",         "1": "BUKIT PANJANG", "2": "CLEMENTI",
-    "3": "CHOA CHU KANG", "4": "HOUGANG",        "5": "JURONG WEST",
-    "6": "PASIR RIS",     "7": "TAMPINES",       "8": "WOODLANDS",
-    "9": "YISHUN",
-}
-
-MAX_PRICE_PSM = 4725
-X_MIN, X_MAX  = 1, 8
-Y_MIN, Y_MAX  = 80, 150
-
+from constants import *
 
 # ── Matric parsing ──────────────────────────────────────────────────────────
 
@@ -48,6 +24,11 @@ def parse_matric(matric):
     towns  = {DIGIT_TO_TOWN[d] for d in set(digits) if d in DIGIT_TO_TOWN}
     return year, month, towns
 
+# Candidate Blocks for zone map
+
+def candidate_blocks_from_zone_map(zones, predicate):
+    """Return block ids whose (min, max) range may satisfy the predicate."""
+    return [b for b, (mn, mx) in enumerate(zones) if predicate(mn, mx)]
 
 # ── Query engine ────────────────────────────────────────────────────────────
 
@@ -77,11 +58,21 @@ def run_query(store, year, start_month, towns):
 
     town_codes = {store.town_dict[t] for t in towns if t in store.town_dict}
 
-    # Stage 1: filter by year and town once — reused across all (x, y)
-    base = [
-        i for i in range(n)
-        if store.year_col[i] == year and store.town_codes[i] in town_codes
-    ]
+    # Use year zone map to prune blocks first
+    candidate_blocks = candidate_blocks_from_zone_map(
+        store.year_zm,
+        lambda mn, mx: mn <= year <= mx
+    )
+
+    # Scan only those candidate blocks
+    base = []
+    for b in candidate_blocks:
+        start = b * store.block_size
+        end = min(start + store.block_size, n)
+
+        for i in range(start, end):
+            if store.year_col[i] == year and store.town_codes[i] in town_codes:
+                base.append(i)
 
     results = []
     for x in range(X_MIN, X_MAX + 1):
@@ -91,8 +82,17 @@ def run_query(store, year, start_month, towns):
         # Stage 2: narrow to the x-month window — reused for all y at this x
         in_window = [i for i in base if store.month_num_col[i] in valid_months]
 
+        sorted_idx = sorted(in_window, key=lambda i: store.floor_area_col[i])
+
+        pointer = 0
+        n = len(sorted_idx)
+
         for y in range(Y_MIN, Y_MAX + 1):
-            matched = [i for i in in_window if store.floor_area_col[i] >= y]
+
+            while pointer < n and store.floor_area_col[sorted_idx[pointer]] < y:
+                pointer += 1
+
+            matched = sorted_idx[pointer:]
 
             if not matched:
                 results.append(_no_result(x, y))

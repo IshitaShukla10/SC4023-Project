@@ -1,11 +1,8 @@
 import csv
 from typing import Dict, List
+from constants import *
 
-MONTH_ABBR = {
-    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4,
-    "May": 5, "Jun": 6, "Jul": 7, "Aug": 8,
-    "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
-}
+
 
 
 class ColumnStore:
@@ -49,6 +46,23 @@ class ColumnStore:
         self.resale_price_col = []
 
         self._n_rows = 0
+
+        self.block_size = BLOCK_SIZE
+
+        # Zone maps: one (min, max) pair per block
+        self.year_zm: List[tuple[int, int]] = []
+        self.month_num_zm: List[tuple[int, int]] = []
+        self.floor_area_zm: List[tuple[float, float]] = []
+        self.resale_price_zm: List[tuple[float, float]] = []
+        self.lease_commence_date_zm: List[tuple[int, int]] = []
+
+    @staticmethod
+    def _build_zone_map(seq, block_size: int) -> List[tuple]:
+        zones = []
+        for i in range(0, len(seq), block_size):
+            chunk = seq[i:i + block_size]
+            zones.append((min(chunk), max(chunk)))
+        return zones
 
     def __len__(self):
         return self._n_rows
@@ -160,5 +174,19 @@ def load_csv(filepath):
         # Build RLE for encoded town codes and month numbers once after loading
         store.town_rle = store._build_rle(store.town_codes)
         store.month_rle = store._build_rle(store.month_num_col)
-        print(f"[INFO] RLE sizes — town runs: {len(store.town_rle)}, month runs: {len(store.month_rle)}")
+
+        # Build zone maps once after loading
+        store.year_zm = store._build_zone_map(store.year_col, store.block_size)
+        store.month_num_zm = store._build_zone_map(store.month_num_col, store.block_size)
+        store.floor_area_zm = store._build_zone_map(store.floor_area_col, store.block_size)
+        store.resale_price_zm = store._build_zone_map(store.resale_price_col, store.block_size)
+        store.lease_commence_date_zm = store._build_zone_map(store.lease_commence_date_col, store.block_size)
+        print(
+            f"[INFO] RLE sizes — town runs: {len(store.town_rle)}, "
+            f"month runs: {len(store.month_rle)}"
+        )
+        print(
+            f"[INFO] Zone maps — year blocks: {len(store.year_zm)}, "
+            f"month blocks: {len(store.month_num_zm)}"
+        )
     return store
