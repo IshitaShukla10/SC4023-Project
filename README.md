@@ -18,6 +18,7 @@ All parameters are derived automatically from the matric number, so running the 
 | `main.py` | Entry point — parses matric number, loads data, runs queries, writes output CSV |
 | `column_store.py` | ColumnStore class and load_csv() — stores each column as a separate list |
 | `analysis.py` | Justification for which compression techniques apply to each column and why |
+| `constants.py` | store constant values |
 | `ScanResult_<MatricNum>.csv` | Output file generated after running main.py |
 
 ## Requirements

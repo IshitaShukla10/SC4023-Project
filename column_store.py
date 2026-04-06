@@ -2,8 +2,8 @@ import csv
 from typing import Dict, List
 from constants import *
 
-
-
+# ColumnStore implements a column-oriented storage layout.
+# Data is stored column-wise in memory to enable efficient filtering
 
 class ColumnStore:
     """Column-oriented storage for the HDB resale dataset.
@@ -13,19 +13,17 @@ class ColumnStore:
     """
 
     def __init__(self):
-        # Chavi's columns
-        self.month_col = []          # raw string, e.g. '2015-01'
+        self.month_col = []          
         self.town_col = []
         self.town_codes: List[int] = []
         self.town_dict: Dict[str, int] = {}
         self.town_rev: List[str] = []
-        self.town_rle: List[tuple[int, int]] = []  # (code, run_len)
+        self.town_rle: List[tuple[int, int]] = []  
         self.block_col = []
-        self.year_col = []           # parsed from month_col at load time
-        self.month_num_col = []      # parsed from month_col at load time
-        self.month_rle: List[tuple[int, int]] = []  # (month_num, run_len)
+        self.year_col = []           
+        self.month_num_col = []      
+        self.month_rle: List[tuple[int, int]] = []  
 
-        # Justin's columns
         self.street_name_col = []
         self.flat_type_col = []
         self.flat_type_codes: List[int] = []
@@ -36,7 +34,6 @@ class ColumnStore:
         self.flat_model_dict: Dict[str, int] = {}
         self.flat_model_rev: List[str] = []
 
-        # Ishita's columns
         self.storey_range_col = []
         self.storey_range_codes: List[int] = []
         self.storey_range_dict: Dict[str, int] = {}
@@ -112,10 +109,10 @@ class ColumnStore:
 def _parse_month(raw):
     """Parse 'YYYY-MM' or 'Mon-YY' strings into (year, month_num)."""
     raw = raw.strip()
-    # newer format: '2015-01'
+
     if len(raw) == 7 and raw[4] == '-' and raw[:4].isdigit():
         return int(raw[:4]), int(raw[5:])
-    # older format: 'Jan-15'
+
     parts = raw.split('-')
     if len(parts) == 2:
         return 2000 + int(parts[1]), MONTH_ABBR.get(parts[0].capitalize(), 0)
@@ -139,7 +136,6 @@ def load_csv(filepath):
                 skipped += 1
                 continue
 
-            # Chavi
             store.month_col.append(row['month'].strip())
             town_str = row['town'].strip().upper()
             store.town_col.append(town_str)
@@ -148,7 +144,7 @@ def load_csv(filepath):
             store.block_col.append(row['block'].strip())
             store.year_col.append(year)
             store.month_num_col.append(month_num)
-            # Justin
+
             store.street_name_col.append(row['street_name'].strip())
             ft_str = row['flat_type'].strip()
             fm_str = row['flat_model'].strip()
@@ -158,7 +154,7 @@ def load_csv(filepath):
             fm_code = store._encode(fm_str, store.flat_model_dict, store.flat_model_rev)
             store.flat_type_codes.append(ft_code)
             store.flat_model_codes.append(fm_code)
-            # Ishita
+
             sr_str = row['storey_range'].strip()
             store.storey_range_col.append(sr_str)
             sr_code = store._encode(sr_str, store.storey_range_dict, store.storey_range_rev)

@@ -24,7 +24,7 @@ def parse_matric(matric):
     towns  = {DIGIT_TO_TOWN[d] for d in set(digits) if d in DIGIT_TO_TOWN}
     return year, month, towns
 
-# Candidate Blocks for zone map
+# ── Candidate Blocks from zone map ────────────────────────────────────────────────────────────
 
 def candidate_blocks_from_zone_map(zones, predicate):
     """Return block ids whose (min, max) range may satisfy the predicate."""
@@ -79,7 +79,6 @@ def run_query(store, year, start_month, towns):
         end_month    = min(start_month + x - 1, 12)
         valid_months = set(range(start_month, end_month + 1))
 
-        # Stage 2: narrow to the x-month window — reused for all y at this x
         in_window = [i for i in base if store.month_num_col[i] in valid_months]
 
         sorted_idx = sorted(in_window, key=lambda i: store.floor_area_col[i])
