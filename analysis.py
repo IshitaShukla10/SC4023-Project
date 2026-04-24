@@ -24,7 +24,7 @@ from itertools import permutations
 
 from column_store import load_csv
 
-# Demo parameters — derived from Ishita's matric U2323465X
+# Demo parameters — derived from Ishita's matric U2323465H
 TARGET_YEAR = 2015
 START_MONTH = 6
 TOWNS       = {"CHOA CHU KANG", "CLEMENTI", "HOUGANG", "JURONG WEST", "PASIR RIS"}
@@ -33,13 +33,11 @@ DEMO_X      = 1
 DEMO_Y      = 80
 
 
-# ── Formatting helpers ──────────────────────────────────────────────────────
+# Formatting helpers
 
 def section(title):
     print()
-    print("=" * 66)
     print(f"  {title}")
-    print("=" * 66)
 
 def subsection(title):
     print(f"\n--- {title} ---")
@@ -52,7 +50,7 @@ def blocks_spanned(idx):
     return len({i // BLOCK_SIZE for i in idx})
 
 
-# ── Section 1: Block abstraction ────────────────────────────────────────────
+# Section 1: Block abstraction
 
 def show_block_abstraction(store):
     section("SECTION 1 - BLOCK ABSTRACTION")
@@ -77,7 +75,7 @@ def show_block_abstraction(store):
     print(f"  Block abstraction gives a concrete way to measure filter speedup.")
 
 
-# ── Section 2: Zone maps ────────────────────────────────────────────────────
+# Section 2: Zone maps
 
 def build_zone_map(col):
     """Build a (min, max) per-block zone map for a column."""
@@ -149,7 +147,7 @@ def show_zone_maps(store):
     print(f"  With zone map:    read {kept}, skip {skipped} ({skipped/nblk*100:.1f}% reduction)")
 
 
-# ── Section 3: Dictionary encoding ─────────────────────────────────────────
+# Section 3: Dictionary encoding
 
 def build_dict_encoding(col):
     """Encode a column as integers with a lookup table."""
@@ -226,7 +224,7 @@ def show_dict_encoding(store):
     print(f"    matched = [i for i in idx if enc_town[i] in target_codes]")
 
 
-# ── Section 4: Run-length encoding ─────────────────────────────────────────
+# Section 4: Run-length encoding
 
 def build_rle(col):
     """Encode a column as (value, count) run pairs."""
@@ -301,7 +299,7 @@ def show_rle(store):
     print(f"  {len(matched_runs)} matching runs, covering {rows_covered:,} rows")
 
 
-# ── Section 5: Filter order ─────────────────────────────────────────────────
+# Section 5: Filter order
 
 def show_filter_permutations(store):
     section("SECTION 5 - FILTER ORDER COMPARISON")
@@ -361,7 +359,7 @@ def show_filter_permutations(store):
     print(f"  only scan a much smaller candidate set.")
 
 
-# ── Section 6: Extra aggregates ─────────────────────────────────────────────
+# Section 6: Extra aggregates
 
 def show_extra_aggregates(store):
     section("SECTION 6 - EXTRA AGGREGATES (avg PSM, stddev PSM)")
@@ -413,7 +411,7 @@ def show_extra_aggregates(store):
     print(f"    std_psm  = math.sqrt(sum((p - avg_psm)**2 for p in psm_vals) / len(psm_vals))")
 
 
-# ── Section 7: Scorecard ────────────────────────────────────────────────────
+# Section 7: Scorecard
 
 def show_scorecard():
     section("SECTION 7 - SUMMARY: WHICH TECHNIQUE FITS WHICH COLUMN")
@@ -457,7 +455,7 @@ def show_scorecard():
     """)
 
 
-# ── Main ────────────────────────────────────────────────────────────────────
+# Main
 
 def main():
     if len(sys.argv) != 2:
@@ -469,9 +467,7 @@ def main():
         print(f"File not found: {csv_path}")
         sys.exit(1)
 
-    print("=" * 66)
     print("  SC4023 - Column Store Analysis")
-    print("=" * 66)
 
     t0    = time.time()
     store = load_csv(csv_path)
@@ -485,9 +481,7 @@ def main():
     show_extra_aggregates(store)
     show_scorecard()
 
-    print("=" * 66)
-    print("  Done.")
-    print("=" * 66 + "\n")
+    print("  Done.\n")
 
 
 if __name__ == "__main__":
